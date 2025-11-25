@@ -32,7 +32,6 @@ def generate_digest_with_llm(news_data):
         return "<h1>Error</h1><p>GEMINI_API_KEY is missing. Please add it to GitHub Secrets.</p>"
 
     genai.configure(api_key=api_key)
-    model = genai.GenerativeModel('gemini-1.5-flash')
 
     prompt = f"""
     You are a professional news anchor and editor. 
@@ -53,13 +52,25 @@ def generate_digest_with_llm(news_data):
     Here is the raw news data:
     {news_data}
     """
+
+    # Use Gemini 3.0 Pro as requested
+    model_name = 'gemini-3.0-pro' 
     
     try:
+        model = genai.GenerativeModel(model_name)
         response = model.generate_content(prompt)
         return response.text.replace("```html", "").replace("```", "")
     except Exception as e:
-        print(f"LLM Generation Error: {e}")
-        return f"<h1>Error Generating Digest</h1><p>Could not generate digest via LLM. Error: {e}</p>"
+        print(f"Error with model {model_name}: {e}")
+        print("Listing available models to help debug:")
+        try:
+            for m in genai.list_models():
+                if 'generateContent' in m.supported_generation_methods:
+                    print(f"- {m.name}")
+        except Exception as list_e:
+            print(f"Could not list models: {list_e}")
+            
+        return f"<h1>Error Generating Digest</h1><p>Could not generate digest via LLM. Check GitHub Action logs for available models. Error: {e}</p>"
 
 def send_email(subject, html_content):
     sender = os.environ.get('EMAIL_SENDER')
