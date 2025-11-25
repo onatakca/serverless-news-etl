@@ -53,8 +53,8 @@ def generate_digest_with_llm(news_data):
     {news_data}
     """
 
-    # Use Gemini 3.0 Pro as requested
-    model_name = 'gemini-3.0-pro' 
+    # Use Gemini 3 Pro Preview as found in the available models list
+    model_name = 'gemini-3-pro-preview' 
     
     try:
         model = genai.GenerativeModel(model_name)
