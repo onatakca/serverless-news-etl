@@ -4,59 +4,62 @@ import ssl
 import os
 import datetime
 from email.message import EmailMessage
+import google.generativeai as genai
 
-def fetch_feed(url, retries=1):
-    """Fetches a feed, with a simple retry mechanism for Nitter instances."""
+def fetch_feed_entries(url, topic, count=5):
+    """Fetches top entries from a Google News RSS feed."""
     try:
         feed = feedparser.parse(url)
         if feed.bozo:
-            raise Exception(f"Error parsing feed: {feed.bozo_exception}")
-        return feed
-    except Exception as e:
-        if retries > 0:
-            print(f"Failed to fetch {url}, retrying... ({e})")
-            return fetch_feed(url, retries - 1)
-        print(f"Failed to fetch {url} after retries.")
-        return None
-
-def get_top_entries(feed_url, count=5):
-    feed = fetch_feed(feed_url)
-    if not feed or not feed.entries:
-        return []
-    return feed.entries[:count]
-
-def generate_html_content(feeds):
-    html_parts = ["<html><body>"]
-    html_parts.append(f"<h1>Daily News Digest - {datetime.date.today()}</h1>")
-    
-    for topic, url in feeds.items():
-        entries = []
-        # Special handling for Nitter backups
-        if isinstance(url, list):
-            for u in url:
-                entries = get_top_entries(u)
-                if entries:
-                    break
-        else:
-            entries = get_top_entries(url)
-            
-        html_parts.append(f"<h2>{topic}</h2>")
-        if not entries:
-            html_parts.append("<p>No news found or error fetching feed.</p>")
-            continue
-            
-        html_parts.append("<ul>")
-        for entry in entries:
-            title = entry.title
-            link = entry.link
-            # Nitter feeds sometimes have empty titles or just text, let's ensure we have something
-            if not title:
-                title = "No Title"
-            html_parts.append(f"<li><a href='{link}'>{title}</a></li>")
-        html_parts.append("</ul>")
+            print(f"Warning: Potential issue parsing feed for {topic}: {feed.bozo_exception}")
         
-    html_parts.append("</body></html>")
-    return "".join(html_parts)
+        entries = feed.entries[:count]
+        data = []
+        for entry in entries:
+            # RSS feeds usually have 'title', 'link', and sometimes 'description' or 'summary'
+            summary = getattr(entry, 'summary', '')
+            # Clean up summary HTML if needed, but for now raw is okay for the LLM to parse
+            data.append(f"- Title: {entry.title}\n  Link: {entry.link}\n  Snippet: {summary}\n")
+        return data
+    except Exception as e:
+        print(f"Error fetching {topic}: {e}")
+        return []
+
+def generate_digest_with_llm(news_data):
+    """Uses Gemini to generate a cohesive HTML newsletter."""
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        return "<h1>Error</h1><p>GEMINI_API_KEY is missing. Please add it to GitHub Secrets.</p>"
+
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel('gemini-1.5-flash')
+
+    prompt = f"""
+    You are a professional news anchor and editor. 
+    I will provide you with the latest raw news headlines and snippets for three topics: Artificial Intelligence, Data Engineering, and Galatasaray SK.
+
+    Your task is to write a "Daily Personal News Digest" email in HTML format.
+    
+    Guidelines:
+    1. **Style**: engaging, concise, and "newsletter-style" (not just a list of links). Write like a human summarizing the day's events.
+    2. **Structure**:
+       - A welcoming intro.
+       - A section for each topic (use <h2>).
+       - For each topic, synthesize the headlines into a narrative. If a story is big, highlight it. 
+       - Embed the links naturally in the text (e.g., "Read more") or as a clean list of sources at the end of the section.
+       - A brief conclusion.
+    3. **Format**: Return ONLY the HTML body (no ```html``` blocks). Use inline CSS for basic styling (clean font, readable).
+
+    Here is the raw news data:
+    {news_data}
+    """
+    
+    try:
+        response = model.generate_content(prompt)
+        return response.text.replace("```html", "").replace("```", "")
+    except Exception as e:
+        print(f"LLM Generation Error: {e}")
+        return f"<h1>Error Generating Digest</h1><p>Could not generate digest via LLM. Error: {e}</p>"
 
 def send_email(subject, html_content):
     sender = os.environ.get('EMAIL_SENDER')
@@ -85,20 +88,29 @@ def send_email(subject, html_content):
         print(f"Error sending email: {e}")
 
 def main():
+    # Switched Galatasaray to Google News for reliability
     feeds = {
         "Artificial Intelligence": "https://news.google.com/rss/search?q=Artificial+Intelligence",
         "Data Engineering": "https://news.google.com/rss/search?q=Data+Engineering",
-        "Galatasaray SK (Twitter/Nitter)": [
-            "https://nitter.net/GalatasaraySK/rss",
-            "https://nitter.poast.org/GalatasaraySK/rss"
-        ]
+        "Galatasaray SK": "https://news.google.com/rss/search?q=Galatasaray+SK" 
     }
 
     print("Fetching news...")
-    html_content = generate_html_content(feeds)
+    all_news_text = ""
+    for topic, url in feeds.items():
+        print(f"Fetching {topic}...")
+        entries = fetch_feed_entries(url, topic)
+        if entries:
+            all_news_text += f"\n=== TOPIC: {topic} ===\n"
+            all_news_text += "\n".join(entries)
+        else:
+            all_news_text += f"\n=== TOPIC: {topic} ===\nNo news found today.\n"
+
+    print("Generating digest with LLM...")
+    html_content = generate_digest_with_llm(all_news_text)
     
     print("Sending email...")
-    send_email(f"Daily News Digest - {datetime.date.today()}", html_content)
+    send_email(f"Daily Digest - {datetime.date.today()}", html_content)
 
 if __name__ == "__main__":
     main()
