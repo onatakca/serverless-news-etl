@@ -53,8 +53,8 @@ def generate_digest_with_llm(news_data):
     {news_data}
     """
 
-    # Use Gemini 3 Pro Preview as found in the available models list
-    model_name = 'gemini-3-pro-preview' 
+    # Switching to Gemini 2.0 Flash as it has a confirmed free tier (15 RPM) in your region.
+    model_name = 'gemini-2.0-flash' 
     
     try:
         model = genai.GenerativeModel(model_name)
@@ -85,6 +85,12 @@ def send_email(subject, html_content):
     msg['Subject'] = subject
     msg['From'] = sender
     msg['To'] = receiver
+    
+    # Mark email as Important / High Priority
+    msg['X-Priority'] = '1'
+    msg['X-MSMail-Priority'] = 'High'
+    msg['Importance'] = 'High'
+    
     msg.set_content("This is a HTML email. Please enable HTML viewing.")
     msg.add_alternative(html_content, subtype='html')
 
