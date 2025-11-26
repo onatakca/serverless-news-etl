@@ -91,6 +91,7 @@ def send_email(subject, html_content):
     msg['From'] = sender
     msg['To'] = receiver
     
+    
     # Mark email as Important / High Priority
     msg['X-Priority'] = '1'
     msg['X-MSMail-Priority'] = 'High'
