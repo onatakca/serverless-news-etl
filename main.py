@@ -6,10 +6,11 @@ import datetime
 from email.message import EmailMessage
 import google.generativeai as genai
 
-def fetch_feed_entries(url, topic, count=5):
-    """Fetches top entries from a Google News RSS feed."""
+def fetch_feed_entries(url, topic, count=10):
+    """Fetches top entries from a Google News or Reddit RSS feed."""
     try:
-        feed = feedparser.parse(url)
+        # Custom User-Agent is often needed for Reddit RSS to work
+        feed = feedparser.parse(url, agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         if feed.bozo:
             print(f"Warning: Potential issue parsing feed for {topic}: {feed.bozo_exception}")
         
@@ -34,20 +35,24 @@ def generate_digest_with_llm(news_data):
     genai.configure(api_key=api_key)
 
     prompt = f"""
-    You are a professional news anchor and editor. 
-    I will provide you with the latest raw news headlines and snippets for three topics: Artificial Intelligence, Data Engineering, and Galatasaray SK.
+    You are an expert investigative journalist and editor. 
+    I will provide you with a large set of raw news headlines and snippets for two main topics: **Artificial Intelligence** and **Galatasaray SK**.
 
-    Your task is to write a "Daily Personal News Digest" email in HTML format.
+    Your task is to write a **comprehensive, in-depth Daily News Report** in HTML format.
     
-    Guidelines:
-    1. **Style**: engaging, concise, and "newsletter-style" (not just a list of links). Write like a human summarizing the day's events.
-    2. **Structure**:
-       - A welcoming intro.
-       - A section for each topic (use <h2>).
-       - For each topic, synthesize the headlines into a narrative. If a story is big, highlight it. 
-       - Embed the links naturally in the text (e.g., "Read more") or as a clean list of sources at the end of the section.
-       - A brief conclusion.
-    3. **Format**: Return ONLY the HTML body (no ```html``` blocks). Use inline CSS for basic styling (clean font, readable).
+    **Guidelines for Content (CRITICAL):**
+    1. **Length & Depth**: Do NOT write short summaries. I want detailed paragraphs. Analyze the news, explain *why* it matters, and connect the dots between different stories.
+    2. **Tone**: Professional, insightful, and engaging. Avoid generic "Here is the news" intros. Dive straight into the most impactful stories.
+    3. **Structure**:
+       - **Executive Summary**: A 2-3 sentence high-level overview of the day's biggest vibe.
+       - **Deep Dive: Artificial Intelligence**: Group stories by themes (e.g., "New Models", "Regulation", "Industry Moves"). Write extensive analysis for the top stories.
+       - **Deep Dive: Galatasaray SK**: Cover match results, transfer rumors, and fan sentiment deeply.
+       - **Sources**: You MUST embed links naturally in the text (e.g., "according to <a href='...'>TechCrunch</a>").
+    
+    **Format**: 
+    - Return ONLY the HTML body (no ```html``` blocks). 
+    - Use modern, clean inline CSS. 
+    - Use `<h3>` for sub-themes within the main topics.
 
     Here is the raw news data:
     {news_data}
@@ -105,11 +110,12 @@ def send_email(subject, html_content):
         print(f"Error sending email: {e}")
 
 def main():
-    # Switched Galatasaray to Google News for reliability
+    # Expanded sources: Google News + Reddit (for community sentiment/breaking news)
     feeds = {
-        "Artificial Intelligence": "https://news.google.com/rss/search?q=Artificial+Intelligence",
-        "Data Engineering": "https://news.google.com/rss/search?q=Data+Engineering",
-        "Galatasaray SK": "https://news.google.com/rss/search?q=Galatasaray+SK" 
+        "Artificial Intelligence (Google News)": "https://news.google.com/rss/search?q=Artificial+Intelligence+when:1d",
+        "Artificial Intelligence (Reddit)": "https://www.reddit.com/r/ArtificialIntelligence/top/.rss?t=day",
+        "Galatasaray SK (Google News)": "https://news.google.com/rss/search?q=Galatasaray+SK+when:1d",
+        "Galatasaray SK (Reddit)": "https://www.reddit.com/r/galatasaray/top/.rss?t=day"
     }
 
     print("Fetching news...")
@@ -118,16 +124,17 @@ def main():
         print(f"Fetching {topic}...")
         entries = fetch_feed_entries(url, topic)
         if entries:
-            all_news_text += f"\n=== TOPIC: {topic} ===\n"
+            all_news_text += f"\n=== SOURCE: {topic} ===\n"
             all_news_text += "\n".join(entries)
         else:
-            all_news_text += f"\n=== TOPIC: {topic} ===\nNo news found today.\n"
+            all_news_text += f"\n=== SOURCE: {topic} ===\nNo news found today.\n"
 
     print("Generating digest with LLM...")
     html_content = generate_digest_with_llm(all_news_text)
     
     print("Sending email...")
-    send_email(f"Daily Digest - {datetime.date.today()}", html_content)
+    # Dynamic subject line
+    send_email(f"Your Daily Briefing: AI & Galatasaray - {datetime.date.today()}", html_content)
 
 if __name__ == "__main__":
     main()
