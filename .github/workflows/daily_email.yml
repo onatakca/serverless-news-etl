@@ -29,3 +29,9 @@ jobs:
         EMAIL_RECEIVER: ${{ secrets.EMAIL_RECEIVER }}
         GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       run: python main.py
+
+    - name: Commit History
+      uses: stefanzweifel/git-auto-commit-action@v5
+      with:
+        commit_message: "Update news history [skip ci]"
+        file_pattern: history.json

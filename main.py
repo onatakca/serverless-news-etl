@@ -6,8 +6,28 @@ import datetime
 from email.message import EmailMessage
 import google.generativeai as genai
 
-def fetch_feed_entries(url, topic, count=10):
-    """Fetches top entries from a Google News or Reddit RSS feed."""
+import json
+
+HISTORY_FILE = 'history.json'
+
+def load_history():
+    if os.path.exists(HISTORY_FILE):
+        try:
+            with open(HISTORY_FILE, 'r') as f:
+                return set(json.load(f))
+        except:
+            return set()
+    return set()
+
+def save_history(history_set):
+    # Convert set to list and save
+    # Keep only last 1000 entries to prevent infinite growth
+    history_list = list(history_set)[-1000:]
+    with open(HISTORY_FILE, 'w') as f:
+        json.dump(history_list, f)
+
+def fetch_feed_entries(url, topic, history, count=10):
+    """Fetches top entries from a Google News or Reddit RSS feed, filtering duplicates."""
     try:
         # Custom User-Agent is often needed for Reddit RSS to work
         feed = feedparser.parse(url, agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
@@ -16,15 +36,22 @@ def fetch_feed_entries(url, topic, count=10):
         
         entries = feed.entries[:count]
         data = []
+        new_links = []
+        
         for entry in entries:
+            if entry.link in history:
+                continue
+                
             # RSS feeds usually have 'title', 'link', and sometimes 'description' or 'summary'
             summary = getattr(entry, 'summary', '')
             # Clean up summary HTML if needed, but for now raw is okay for the LLM to parse
             data.append(f"- Title: {entry.title}\n  Link: {entry.link}\n  Snippet: {summary}\n")
-        return data
+            new_links.append(entry.link)
+            
+        return data, new_links
     except Exception as e:
         print(f"Error fetching {topic}: {e}")
-        return []
+        return [], []
 
 def generate_digest_with_llm(news_data):
     """Uses Gemini to generate a cohesive HTML newsletter."""
@@ -91,7 +118,6 @@ def send_email(subject, html_content):
     msg['From'] = sender
     msg['To'] = receiver
     
-    
     # Mark email as Important / High Priority
     msg['X-Priority'] = '1'
     msg['X-MSMail-Priority'] = 'High'
@@ -119,16 +145,28 @@ def main():
         "Galatasaray SK (Reddit)": "https://www.reddit.com/r/galatasaray/top/.rss?t=day"
     }
 
+    print("Loading history...")
+    history = load_history()
+    print(f"Loaded {len(history)} past links.")
+
     print("Fetching news...")
     all_news_text = ""
+    new_links_collected = []
+    
     for topic, url in feeds.items():
         print(f"Fetching {topic}...")
-        entries = fetch_feed_entries(url, topic)
+        entries, new_links = fetch_feed_entries(url, topic, history)
         if entries:
             all_news_text += f"\n=== SOURCE: {topic} ===\n"
             all_news_text += "\n".join(entries)
+            new_links_collected.extend(new_links)
         else:
-            all_news_text += f"\n=== SOURCE: {topic} ===\nNo news found today.\n"
+            # If no *new* news, we don't add anything to the text
+            print(f"  No new stories found for {topic}.")
+
+    if not all_news_text:
+        print("No new news found today! Skipping email.")
+        return
 
     print("Generating digest with LLM...")
     html_content = generate_digest_with_llm(all_news_text)
@@ -136,6 +174,11 @@ def main():
     print("Sending email...")
     # Dynamic subject line
     send_email(f"Your Daily Briefing: AI & Galatasaray - {datetime.date.today()}", html_content)
+    
+    print("Updating history...")
+    history.update(new_links_collected)
+    save_history(history)
+    print("History saved.")
 
 if __name__ == "__main__":
     main()
