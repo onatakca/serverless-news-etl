@@ -5,6 +5,9 @@ on:
     - cron: '0 8 * * *'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   send_digest:
     runs-on: ubuntu-latest
@@ -35,3 +38,5 @@ jobs:
       with:
         commit_message: "Update news history [skip ci]"
         file_pattern: history.json
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
