@@ -4,7 +4,7 @@ import ssl
 import os
 import datetime
 from email.message import EmailMessage
-import google.generativeai as genai
+import anthropic
 
 import json
 
@@ -54,12 +54,12 @@ def fetch_feed_entries(url, topic, history, count=10):
         return [], []
 
 def generate_digest_with_llm(news_data):
-    """Uses Gemini to generate a cohesive HTML newsletter."""
-    api_key = os.environ.get("GEMINI_API_KEY")
+    """Uses Claude 3.5 Haiku to generate a cohesive HTML newsletter."""
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
-        return "<h1>Error</h1><p>GEMINI_API_KEY is missing. Please add it to GitHub Secrets.</p>"
+        return "<h1>Error</h1><p>ANTHROPIC_API_KEY is missing. Please add it to GitHub Secrets.</p>"
 
-    genai.configure(api_key=api_key)
+    client = anthropic.Anthropic(api_key=api_key)
 
     prompt = f"""
     You are an expert investigative journalist and editor. 
@@ -85,24 +85,23 @@ def generate_digest_with_llm(news_data):
     {news_data}
     """
 
-    # Switching to Gemini 2.0 Flash as it has a confirmed free tier (15 RPM) in your region.
-    model_name = 'gemini-2.0-flash' 
+    # Using Claude 3.5 Haiku - most cost-effective Claude model
+    # Pricing: $0.80/1M input tokens, $4.00/1M output tokens
+    # max_tokens=4096 keeps output costs reasonable while allowing comprehensive content
+    model_name = 'claude-3-5-haiku-latest'
     
     try:
-        model = genai.GenerativeModel(model_name)
-        response = model.generate_content(prompt)
-        return response.text.replace("```html", "").replace("```", "")
+        message = client.messages.create(
+            model=model_name,
+            max_tokens=4096,
+            messages=[
+                {"role": "user", "content": prompt}
+            ]
+        )
+        return message.content[0].text.replace("```html", "").replace("```", "")
     except Exception as e:
         print(f"Error with model {model_name}: {e}")
-        print("Listing available models to help debug:")
-        try:
-            for m in genai.list_models():
-                if 'generateContent' in m.supported_generation_methods:
-                    print(f"- {m.name}")
-        except Exception as list_e:
-            print(f"Could not list models: {list_e}")
-            
-        return f"<h1>Error Generating Digest</h1><p>Could not generate digest via LLM. Check GitHub Action logs for available models. Error: {e}</p>"
+        return f"<h1>Error Generating Digest</h1><p>Could not generate digest via LLM. Error: {e}</p>"
 
 def send_email(subject, html_content):
     sender = os.environ.get('EMAIL_SENDER')
